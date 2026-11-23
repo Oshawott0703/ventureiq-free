@@ -59,6 +59,4 @@ Open Command Prompt in this same folder and run:
 python -m streamlit run app.py
 ```
 
-## Before taking real orders
 
-Have a parent or guardian help review age requirements, payment arrangements, customer privacy, refund terms, record keeping and any applicable Australian business or tax obligations.
