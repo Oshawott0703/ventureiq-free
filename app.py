@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import os
 import zipfile
 from datetime import date
 from typing import Dict, List
@@ -196,9 +197,133 @@ with st.sidebar:
 
 
 # -----------------------------
+# Personal AI chatbot
+# -----------------------------
+def get_openai_api_key() -> str:
+    """Read the API key from Streamlit secrets or an environment variable."""
+    secret_key = ""
+    try:
+        secret_key = st.secrets.get("OPENAI_API_KEY", "")
+    except Exception:
+        # Local development may not have a secrets.toml file.
+        pass
+    return secret_key or os.getenv("OPENAI_API_KEY", "")
+
+
+def render_personal_ai_chatbot() -> None:
+    """Render VentureIQ's business-focused assistant above the dashboard."""
+    st.markdown(
+        """
+        <div class="hero">
+          <div class="eyebrow">Your personal AI assistant</div>
+          <h2 style="margin:.35rem 0 0 0;">Ask VentureIQ</h2>
+          <p class="muted" style="margin:.45rem 0 0 0;">
+            Brainstorm business ideas, improve content, plan campaigns and get practical next steps.
+          </p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    if "ai_messages" not in st.session_state:
+        st.session_state.ai_messages = [
+            {
+                "role": "assistant",
+                "content": "Hi! I'm your VentureIQ assistant. I can help you brainstorm business ideas, plan social content, improve captions and think through your next steps. What are you working on?",
+            }
+        ]
+
+    api_key = get_openai_api_key()
+    with st.container(border=True):
+        top_left, top_right = st.columns([5, 1])
+        with top_left:
+            st.markdown("**VentureIQ Business Assistant**")
+            st.caption("A focused assistant for small-business planning and content creation.")
+        with top_right:
+            if st.button("Clear chat", key="clear_ai_chat", use_container_width=True):
+                st.session_state.ai_messages = [
+                    {
+                        "role": "assistant",
+                        "content": "Chat cleared. What would you like to work on next?",
+                    }
+                ]
+                st.rerun()
+
+        for message in st.session_state.ai_messages:
+            with st.chat_message(message["role"]):
+                st.markdown(message["content"])
+
+        if not api_key:
+            st.info(
+                "The chatbot is ready, but live AI replies are not connected yet. "
+                "Add an OPENAI_API_KEY in your Streamlit app's Secrets settings to activate it."
+            )
+            st.code('OPENAI_API_KEY = "your-api-key"', language="toml")
+            st.caption(
+                "Keep the key private. Do not paste it into app.py or commit it to GitHub. "
+                "An adult should manage the API account, key and any billing. API usage may cost money."
+            )
+            st.chat_input("Connect the AI key to start chatting", disabled=True, key="ai_chat_disabled")
+            return
+
+        prompt = st.chat_input("Ask VentureIQ about your business or content...")
+        if prompt:
+            st.session_state.ai_messages.append({"role": "user", "content": prompt})
+            with st.chat_message("user"):
+                st.markdown(prompt)
+
+            system_instructions = (
+                "You are VentureIQ, a practical and supportive business-planning assistant inside a "
+                "beginner-friendly business content app. Help with brainstorming, audience definition, "
+                "content calendars, social captions, marketing plans, product ideas and clear next steps. "
+                "Use plain language and structured, actionable suggestions. Ask a brief clarifying question "
+                "when essential details are missing. Do not claim to have checked live trends, analytics, "
+                "prices or laws unless that information is supplied or a verified tool is available. "
+                "Do not guarantee sales, reach, followers or business outcomes. Encourage the user to verify "
+                "facts and get permission before using customer stories, photos or testimonials. Never ask "
+                "for passwords, payment details, private customer data or other sensitive information. "
+                "For legal, tax, financial or contractual decisions, provide general educational context and "
+                "recommend review by a qualified adult or professional."
+            )
+            # Send only the most recent messages to keep requests concise.
+            conversation = [
+                {"role": item["role"], "content": item["content"]}
+                for item in st.session_state.ai_messages[-13:]
+            ]
+            try:
+                from openai import OpenAI
+
+                client = OpenAI(api_key=api_key)
+                with st.chat_message("assistant"):
+                    with st.spinner("VentureIQ is thinking..."):
+                        response = client.responses.create(
+                            model="gpt-6-luna",
+                            instructions=system_instructions,
+                            input=conversation,
+                            max_output_tokens=500,
+                        )
+                    answer = response.output_text.strip() or "I couldn't create a response. Please try again."
+                    st.markdown(answer)
+                st.session_state.ai_messages.append({"role": "assistant", "content": answer})
+            except Exception as exc:
+                # Keep the technical details out of the page so secrets are never exposed.
+                error_message = (
+                    "I couldn't reach the AI service. Check that the API key is valid and that the "
+                    "API project has access and available usage, then try again."
+                )
+                with st.chat_message("assistant"):
+                    st.error(error_message)
+                st.session_state.ai_messages.append(
+                    {"role": "assistant", "content": error_message}
+                )
+
+
+# -----------------------------
 # Dashboard
 # -----------------------------
 if page == "Dashboard":
+    render_personal_ai_chatbot()
+    st.divider()
     st.markdown(
         """
         <div class="hero">
