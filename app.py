@@ -320,24 +320,47 @@ def ventureiq_reply(prompt: str) -> str:
 
 @st.cache_data(ttl=900, show_spinner=False)
 def ventureiq_web_search(query: str) -> list:
-    """Search public web results without a paid search API key."""
+    """Search several public search backends, without a paid API key."""
     from ddgs import DDGS
 
-    raw_results = DDGS(timeout=10).text(
-        query,
-        region="au-en",
-        safesearch="moderate",
-        max_results=5,
-        backend="auto",
-    )
-    clean_results = []
-    for item in raw_results or []:
-        title = str(item.get("title", "Untitled result")).strip()
-        snippet = str(item.get("body", "No preview available.")).strip()
-        url = str(item.get("href", "")).strip()
-        if url.startswith(("https://", "http://")):
-            clean_results.append({"title": title[:240], "snippet": snippet[:900], "url": url})
-    return clean_results
+    # A comma-separated backend list lets DDGS try alternative public search
+    # providers when one is temporarily blocked, rate-limited or unavailable.
+    # These providers do not offer a guaranteed uptime or fixed free quota.
+    backend_groups = [
+        "auto",
+        "duckduckgo,brave,bing,google,yahoo,mojeek",
+    ]
+    last_error = None
+
+    for backend_group in backend_groups:
+        try:
+            raw_results = DDGS(timeout=20).text(
+                query,
+                region="au-en",
+                safesearch="moderate",
+                max_results=7,
+                backend=backend_group,
+            )
+            clean_results = []
+            for item in raw_results or []:
+                title = str(item.get("title", "Untitled result")).strip()
+                snippet = str(item.get("body", "No preview available.")).strip()
+                url = str(item.get("href", "")).strip()
+                if url.startswith(("https://", "http://")):
+                    clean_results.append({
+                        "title": title[:240],
+                        "snippet": snippet[:900],
+                        "url": url,
+                    })
+            if clean_results:
+                return clean_results[:5]
+        except Exception as exc:
+            last_error = exc
+
+    # Raise the last provider error so the UI can show its normal friendly message.
+    if last_error:
+        raise RuntimeError("All public search backends were unavailable") from last_error
+    return []
 
 
 def fetch_page_text(url: str) -> str:
@@ -518,8 +541,9 @@ def render_personal_ai_chatbot() -> None:
                     st.session_state.ai_messages.append({
                         "role": "assistant",
                         "content": (
-                            "I couldn't reach the public search service just now. It may be temporarily unavailable, "
-                            "rate-limited, or blocked by the app host. Try again later or switch web search off. "
+                            "I couldn't connect to any of the public search providers just now. They may be "
+                            "temporarily unavailable, rate-limited, or unreachable from the app host. "
+                            "Wait a little and retry, or check the Streamlit app logs if this keeps happening. "
                             "No paid API key is needed."
                         ),
                     })
