@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import re
 import zipfile
 from datetime import date
 from typing import Dict, List
@@ -339,14 +340,111 @@ def ventureiq_web_search(query: str) -> list:
     return clean_results
 
 
+def fetch_page_text(url: str) -> str:
+    """Fetch readable text from a public webpage; skip pages that block automated access."""
+    import requests
+    from bs4 import BeautifulSoup
+
+    response = requests.get(
+        url,
+        timeout=8,
+        headers={"User-Agent": "Mozilla/5.0 (compatible; VentureIQResearch/1.0)"},
+    )
+    response.raise_for_status()
+    if "text/html" not in response.headers.get("Content-Type", "").lower():
+        return ""
+
+    soup = BeautifulSoup(response.text, "html.parser")
+    for unwanted in soup(["script", "style", "nav", "footer", "header", "aside", "form", "noscript"]):
+        unwanted.decompose()
+
+    main = soup.find("article") or soup.find("main") or soup.body or soup
+    paragraphs = [
+        re.sub(r"\s+", " ", node.get_text(" ", strip=True))
+        for node in main.find_all(["p", "h1", "h2", "h3", "li"])
+    ]
+    paragraphs = [item for item in paragraphs if len(item) >= 45]
+    return " ".join(paragraphs)[:18000]
+
+
+def make_web_overview(query: str, results: list) -> tuple[str, list]:
+    """Build an extractive overview from retrieved page text, with snippets as fallback."""
+    import requests  # noqa: F401 - confirms the page-fetch dependency is available
+
+    query_terms = {
+        word for word in re.findall(r"[a-zA-Z0-9']+", query.lower())
+        if len(word) > 2 and word not in {"the", "and", "for", "with", "from", "about", "what", "when", "where", "latest"}
+    }
+    source_notes = []
+    all_sentences = []
+
+    for result in results[:5]:
+        text = ""
+        try:
+            text = fetch_page_text(result["url"])
+        except Exception:
+            text = ""
+        if not text:
+            text = result.get("snippet", "")
+        if text:
+            source_notes.append({"title": result["title"], "url": result["url"], "text": text})
+            sentences = re.split(r"(?<=[.!?])\s+", text)
+            for sentence in sentences:
+                sentence = sentence.strip()
+                if 65 <= len(sentence) <= 420:
+                    words = set(re.findall(r"[a-zA-Z0-9']+", sentence.lower()))
+                    overlap = len(words & query_terms)
+                    if overlap or not query_terms:
+                        # Prefer informative, query-relevant sentences over very short fragments.
+                        score = overlap * 3 + min(len(sentence), 240) / 120
+                        all_sentences.append((score, sentence, result["title"], result["url"]))
+
+    if not all_sentences:
+        return (
+            "I found search results, but couldn't retrieve enough readable webpage text to create a reliable overview. "
+            "Some websites block automated access. The source links are listed below so you can still check them.",
+            results[:5],
+        )
+
+    # Keep the strongest distinct points and avoid repeating nearly identical sentences.
+    all_sentences.sort(key=lambda item: item[0], reverse=True)
+    selected = []
+    seen = set()
+    used_sources = set()
+    for score, sentence, title, url in all_sentences:
+        normalised = re.sub(r"[^a-z0-9 ]", "", sentence.lower())
+        if normalised in seen or any(normalised[:90] == old[:90] for old in seen):
+            continue
+        if len(selected) >= 7:
+            break
+        # Encourage more than one source before taking many points from one page.
+        if url in used_sources and len(used_sources) < min(3, len(source_notes)) and len(selected) < 4:
+            continue
+        selected.append(sentence)
+        seen.add(normalised)
+        used_sources.add(url)
+
+    if not selected:
+        selected = [item[1] for item in all_sentences[:5]]
+
+    overview = (
+        f"## Overview\n\nI searched for **{query}** and reviewed the readable text from "
+        f"{len(source_notes)} source(s). Here are the main points found across those pages:\n\n"
+        + "\n".join(f"- {sentence}" for sentence in selected)
+        + "\n\n**Note:** This is an automated summary of the accessible page text, not a live AI analysis. "
+        "Some pages may be blocked or only partly readable. Check the sources below for context, dates and details."
+    )
+    return overview, [{"title": item["title"], "url": item["url"]} for item in source_notes]
+
+
 def render_chat_message(message: dict) -> None:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
-        for result in message.get("results", []):
-            st.markdown(f"**{result['title']}**")
-            if result.get("snippet"):
-                st.caption(result["snippet"])
-            st.link_button("Open source", result["url"])
+        sources = message.get("results", [])
+        if sources:
+            with st.expander(f"Sources ({len(sources)})", expanded=False):
+                for index, result in enumerate(sources, start=1):
+                    st.markdown(f"{index}. [{result['title']}]({result['url']})")
 
 
 def render_personal_ai_chatbot() -> None:
@@ -369,7 +467,7 @@ def render_personal_ai_chatbot() -> None:
             "role": "assistant",
             "content": (
                 "Welcome to VentureIQ! I can help with business ideas, marketing plans, captions and content planning. "
-                "Turn on **Search the web** when you want me to look for current or specific information and show source links."
+                "Turn on **Search the web** when you want an overview of current or specific information, with source links kept at the bottom."
             ),
         }]
 
@@ -393,7 +491,7 @@ def render_personal_ai_chatbot() -> None:
             help="When enabled, VentureIQ searches public web results and displays source links. Search availability and rate limits depend on external services.",
         )
         if web_search_on:
-            st.caption("Web search is on. Results are previews from public search services, not verified recommendations.")
+            st.caption("Web search is on. VentureIQ will try to read the pages and create an overview, with source links tucked underneath.")
         else:
             st.caption("Web search is off. VentureIQ will use its built-in business guidance and templates.")
 
@@ -408,19 +506,14 @@ def render_personal_ai_chatbot() -> None:
                     with st.spinner("Searching the web..."):
                         results = ventureiq_web_search(prompt)
                     if results:
-                        answer = (
-                            f"I searched the web for **{prompt}** and found {len(results)} results. "
-                            "Here are the available previews and source links. Compare sources and check the original pages "
-                            "before relying on important details; search snippets can be incomplete or out of date.\n\n"
-                            "I can retrieve search results here, but this free version does not use a language model to "
-                            "read and reason across the pages like ChatGPT."
-                        )
+                        answer, sources = make_web_overview(prompt, results)
                     else:
                         answer = (
                             "The search service returned no usable results for that question. Try rephrasing it, "
                             "or switch web search off to use VentureIQ's built-in guidance."
                         )
-                    st.session_state.ai_messages.append({"role": "assistant", "content": answer, "results": results})
+                        sources = []
+                    st.session_state.ai_messages.append({"role": "assistant", "content": answer, "results": sources})
                 except Exception:
                     st.session_state.ai_messages.append({
                         "role": "assistant",
