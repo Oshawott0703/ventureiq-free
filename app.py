@@ -334,7 +334,7 @@ def ventureiq_web_search(query: str) -> list:
 
     for backend_group in backend_groups:
         try:
-            raw_results = DDGS(timeout=20).text(
+            raw_results = DDGS(timeout=8).text(
                 query,
                 region="au-en",
                 safesearch="moderate",
@@ -363,14 +363,15 @@ def ventureiq_web_search(query: str) -> list:
     return []
 
 
+@st.cache_data(ttl=3600, show_spinner=False)
 def fetch_page_text(url: str) -> str:
-    """Fetch readable text from a public webpage; skip pages that block automated access."""
+    """Fetch readable text from a public webpage; cache successful reads."""
     import requests
     from bs4 import BeautifulSoup
 
     response = requests.get(
         url,
-        timeout=8,
+        timeout=(3, 4),
         headers={"User-Agent": "Mozilla/5.0 (compatible; VentureIQResearch/1.0)"},
     )
     response.raise_for_status()
@@ -387,49 +388,55 @@ def fetch_page_text(url: str) -> str:
         for node in main.find_all(["p", "h1", "h2", "h3", "li"])
     ]
     paragraphs = [item for item in paragraphs if len(item) >= 45]
-    return " ".join(paragraphs)[:18000]
+    return " ".join(paragraphs)[:12000]
 
 
 def make_web_overview(query: str, results: list) -> tuple[str, list]:
-    """Build an extractive overview from retrieved page text, with snippets as fallback."""
-    import requests  # noqa: F401 - confirms the page-fetch dependency is available
+    """Create a quick extractive overview; fetch a few pages concurrently."""
+    from concurrent.futures import ThreadPoolExecutor, as_completed
 
     query_terms = {
         word for word in re.findall(r"[a-zA-Z0-9']+", query.lower())
         if len(word) > 2 and word not in {"the", "and", "for", "with", "from", "about", "what", "when", "where", "latest"}
     }
-    source_notes = []
-    all_sentences = []
 
+    # Fetch only the three strongest results, at the same time. Search snippets
+    # from the remaining results still contribute to the overview and sources.
+    page_results = results[:3]
+    page_texts = {}
+    if page_results:
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            futures = {executor.submit(fetch_page_text, item["url"]): item["url"] for item in page_results}
+            for future in as_completed(futures):
+                url = futures[future]
+                try:
+                    page_texts[url] = future.result()
+                except Exception:
+                    page_texts[url] = ""
+
+    all_sentences = []
+    used_source_count = 0
     for result in results[:5]:
-        text = ""
-        try:
-            text = fetch_page_text(result["url"])
-        except Exception:
-            text = ""
-        if not text:
-            text = result.get("snippet", "")
+        text = page_texts.get(result["url"], "") or result.get("snippet", "")
         if text:
-            source_notes.append({"title": result["title"], "url": result["url"], "text": text})
+            used_source_count += 1
             sentences = re.split(r"(?<=[.!?])\s+", text)
             for sentence in sentences:
                 sentence = sentence.strip()
-                if 65 <= len(sentence) <= 420:
+                if 45 <= len(sentence) <= 420:
                     words = set(re.findall(r"[a-zA-Z0-9']+", sentence.lower()))
                     overlap = len(words & query_terms)
                     if overlap or not query_terms:
-                        # Prefer informative, query-relevant sentences over very short fragments.
                         score = overlap * 3 + min(len(sentence), 240) / 120
                         all_sentences.append((score, sentence, result["title"], result["url"]))
 
     if not all_sentences:
         return (
-            "I found search results, but couldn't retrieve enough readable webpage text to create a reliable overview. "
-            "Some websites block automated access. The source links are listed below so you can still check them.",
-            results[:5],
+            "I found search results, but their previews did not contain enough readable information to create a useful overview. "
+            "The sources are listed below.",
+            [{"title": item["title"], "url": item["url"]} for item in results[:5]],
         )
 
-    # Keep the strongest distinct points and avoid repeating nearly identical sentences.
     all_sentences.sort(key=lambda item: item[0], reverse=True)
     selected = []
     seen = set()
@@ -438,26 +445,25 @@ def make_web_overview(query: str, results: list) -> tuple[str, list]:
         normalised = re.sub(r"[^a-z0-9 ]", "", sentence.lower())
         if normalised in seen or any(normalised[:90] == old[:90] for old in seen):
             continue
-        if len(selected) >= 7:
+        if len(selected) >= 6:
             break
-        # Encourage more than one source before taking many points from one page.
-        if url in used_sources and len(used_sources) < min(3, len(source_notes)) and len(selected) < 4:
+        if url in used_sources and len(used_sources) < min(3, len(results)) and len(selected) < 3:
             continue
         selected.append(sentence)
         seen.add(normalised)
         used_sources.add(url)
 
     if not selected:
-        selected = [item[1] for item in all_sentences[:5]]
+        selected = [item[1] for item in all_sentences[:4]]
 
     overview = (
-        f"## Overview\n\nI searched for **{query}** and reviewed the readable text from "
-        f"{len(source_notes)} source(s). Here are the main points found across those pages:\n\n"
+        f"## Overview\n\nI searched for **{query}** and used available page text and search previews "
+        f"from up to {used_source_count} result(s). Here are the main points:\n\n"
         + "\n".join(f"- {sentence}" for sentence in selected)
-        + "\n\n**Note:** This is an automated summary of the accessible page text, not a live AI analysis. "
-        "Some pages may be blocked or only partly readable. Check the sources below for context, dates and details."
+        + "\n\n**Note:** This is an automated summary of accessible webpage text and search previews, "
+        "not a live AI analysis. Check the source dates and context before relying on the information."
     )
-    return overview, [{"title": item["title"], "url": item["url"]} for item in source_notes]
+    return overview, [{"title": item["title"], "url": item["url"]} for item in results[:5]]
 
 
 def render_chat_message(message: dict) -> None:
