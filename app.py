@@ -191,7 +191,7 @@ with st.sidebar:
     )
     st.divider()
     st.markdown("**Free edition**")
-    st.caption("Uses built-in templates. No OpenAI API key or paid AI connection is required.")
+    st.caption("Built-in templates plus optional free public web search. No OpenAI API key is required.")
     st.caption("Download generated packs to keep your work. Session data may reset.")
 
 
@@ -313,20 +313,51 @@ def ventureiq_reply(prompt: str) -> str:
         "- Help me write an Instagram caption.\n"
         "- How should I explain my digital product?\n"
         "- Give me a simple marketing plan for a new business.\n\n"
-        "This free assistant uses built-in rules and templates. It does not connect to a live AI model or "
-        "search current market trends."
+        "This built-in assistant uses local rules and templates. Turn on web search in the chat panel to retrieve current public search results."
     )
 
 
+@st.cache_data(ttl=900, show_spinner=False)
+def ventureiq_web_search(query: str) -> list:
+    """Search public web results without a paid search API key."""
+    from ddgs import DDGS
+
+    raw_results = DDGS(timeout=10).text(
+        query,
+        region="au-en",
+        safesearch="moderate",
+        max_results=5,
+        backend="auto",
+    )
+    clean_results = []
+    for item in raw_results or []:
+        title = str(item.get("title", "Untitled result")).strip()
+        snippet = str(item.get("body", "No preview available.")).strip()
+        url = str(item.get("href", "")).strip()
+        if url.startswith(("https://", "http://")):
+            clean_results.append({"title": title[:240], "snippet": snippet[:900], "url": url})
+    return clean_results
+
+
+def render_chat_message(message: dict) -> None:
+    with st.chat_message(message["role"]):
+        st.markdown(message["content"])
+        for result in message.get("results", []):
+            st.markdown(f"**{result['title']}**")
+            if result.get("snippet"):
+                st.caption(result["snippet"])
+            st.link_button("Open source", result["url"])
+
+
 def render_personal_ai_chatbot() -> None:
-    """Render the free, local VentureIQ assistant above the dashboard."""
+    """Render VentureIQ's local assistant with optional live web search."""
     st.markdown(
         """
         <div class="hero">
-          <div class="eyebrow">Free built-in business helper</div>
+          <div class="eyebrow">VentureIQ business assistant</div>
           <h2 style="margin:.35rem 0 0 0;">Ask VentureIQ</h2>
           <p class="muted" style="margin:.45rem 0 0 0;">
-            Get guided help with business ideas, marketing, captions and content planning — no API key needed.
+            Get built-in business guidance, or search the web for specific and current questions.
           </p>
         </div>
         """,
@@ -337,8 +368,8 @@ def render_personal_ai_chatbot() -> None:
         st.session_state.ai_messages = [{
             "role": "assistant",
             "content": (
-                "Welcome to VentureIQ! I can help with business ideas, marketing plans, captions, "
-                "content calendars and product descriptions. What would you like to work on?"
+                "Welcome to VentureIQ! I can help with business ideas, marketing plans, captions and content planning. "
+                "Turn on **Search the web** when you want me to look for current or specific information and show source links."
             ),
         }]
 
@@ -346,24 +377,62 @@ def render_personal_ai_chatbot() -> None:
         top_left, top_right = st.columns([5, 1])
         with top_left:
             st.markdown("**VentureIQ Assistant · Free Edition**")
-            st.caption("Built-in guidance and templates. No OpenAI key, external AI account or API billing.")
+            st.caption("Built-in guidance plus optional public web search. No OpenAI key or paid AI API required.")
         with top_right:
             if st.button("Clear chat", key="clear_ai_chat", use_container_width=True):
                 st.session_state.ai_messages = [{
                     "role": "assistant",
-                    "content": "Chat cleared. What would you like help planning?",
+                    "content": "Chat cleared. What would you like help with?",
                 }]
                 st.rerun()
 
-        for message in st.session_state.ai_messages:
-            with st.chat_message(message["role"]):
-                st.markdown(message["content"])
+        web_search_on = st.toggle(
+            "Search the web for my next question",
+            value=False,
+            key="ventureiq_web_search_toggle",
+            help="When enabled, VentureIQ searches public web results and displays source links. Search availability and rate limits depend on external services.",
+        )
+        if web_search_on:
+            st.caption("Web search is on. Results are previews from public search services, not verified recommendations.")
+        else:
+            st.caption("Web search is off. VentureIQ will use its built-in business guidance and templates.")
 
-        prompt = st.chat_input("Ask VentureIQ about your business or content...", key="ventureiq_chat_input")
+        for message in st.session_state.ai_messages:
+            render_chat_message(message)
+
+        prompt = st.chat_input("Ask VentureIQ a question...", key="ventureiq_chat_input")
         if prompt:
             st.session_state.ai_messages.append({"role": "user", "content": prompt})
-            answer = ventureiq_reply(prompt)
-            st.session_state.ai_messages.append({"role": "assistant", "content": answer})
+            if web_search_on:
+                try:
+                    with st.spinner("Searching the web..."):
+                        results = ventureiq_web_search(prompt)
+                    if results:
+                        answer = (
+                            f"I searched the web for **{prompt}** and found {len(results)} results. "
+                            "Here are the available previews and source links. Compare sources and check the original pages "
+                            "before relying on important details; search snippets can be incomplete or out of date.\n\n"
+                            "I can retrieve search results here, but this free version does not use a language model to "
+                            "read and reason across the pages like ChatGPT."
+                        )
+                    else:
+                        answer = (
+                            "The search service returned no usable results for that question. Try rephrasing it, "
+                            "or switch web search off to use VentureIQ's built-in guidance."
+                        )
+                    st.session_state.ai_messages.append({"role": "assistant", "content": answer, "results": results})
+                except Exception:
+                    st.session_state.ai_messages.append({
+                        "role": "assistant",
+                        "content": (
+                            "I couldn't reach the public search service just now. It may be temporarily unavailable, "
+                            "rate-limited, or blocked by the app host. Try again later or switch web search off. "
+                            "No paid API key is needed."
+                        ),
+                    })
+            else:
+                answer = ventureiq_reply(prompt)
+                st.session_state.ai_messages.append({"role": "assistant", "content": answer})
             st.rerun()
 
 
