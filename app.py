@@ -1,10 +1,14 @@
 from __future__ import annotations
 
-import csv
 import io
 import zipfile
 from datetime import date
 from typing import Dict, List
+
+from product_builder import (
+    build_blank_product_pack, build_calendar, build_captions, build_hooks,
+    build_pack_markdown, build_starter_pack_pdf, csv_bytes,
+)
 
 import streamlit as st
 
@@ -82,157 +86,26 @@ if "sales" not in st.session_state:
 
 
 # -----------------------------
-# Reusable content templates
+# Pack helpers
 # -----------------------------
-POST_TYPES = [
-    ("Introduce the business", "Help new people understand what the business offers."),
-    ("Explain a customer problem", "Show that you understand a problem your audience has."),
-    ("Share a useful tip", "Give the audience something practical they can use."),
-    ("Show the process", "Give a behind-the-scenes look at how the product or service is made."),
-    ("Answer a common question", "Reduce uncertainty by answering a frequently asked question."),
-    ("Highlight a benefit", "Explain one useful outcome customers may get."),
-    ("Share a customer story", "Use a genuine customer experience only when you have permission."),
-    ("Compare options", "Help customers understand which option may suit them."),
-    ("Show a product detail", "Explain a feature, ingredient, material or service detail."),
-    ("Share a checklist", "Make a useful mini-checklist related to the business."),
-    ("Introduce the offer", "Explain what is included in the current offer."),
-    ("Correct a misconception", "Explain a common misunderstanding in the industry."),
-    ("Invite a conversation", "Ask a relevant question and encourage replies."),
-    ("Weekly recap", "Summarise useful information and invite the next step."),
-]
-
-CAPTION_TEMPLATES = [
-    "Looking for {benefit}? At {business}, we help {audience} with {offer}. Here's one thing to keep in mind: {topic}. {cta}",
-    "A simple reminder for {audience}: small, thoughtful steps can make a difference. Today we're sharing this tip about {topic}. Learn more about {business} and {offer}. {cta}",
-    "Not sure where to start with {topic}? Start by thinking about what matters most to you. {business} is here to help with {offer}. {cta}",
-    "Behind every good result is a process. Here's a closer look at how {business} approaches {topic}. We focus on helping {audience} with {benefit}. {cta}",
-    "Frequently asked question: where should you begin with {topic}? Our suggestion is to start with your needs, compare your options and ask questions. Explore {offer} from {business}. {cta}",
-    "Save this post for later: one useful thing to remember about {topic} is to keep your next step clear and achievable. For {audience}, {business} offers {offer}. {cta}",
-    "What would make {topic} easier for you? We're interested in hearing what {audience} find most useful. At {business}, our focus is {benefit}. {cta}",
-    "A closer look at {offer}: this is designed for {audience} who want {benefit}. Read the details, check whether it suits your needs and get in touch with {business}. {cta}",
-]
-
-HOOKS = [
-    "A beginner-friendly guide to {topic}",
-    "Three things to consider before you choose {topic}",
-    "One small way to make {topic} easier",
-    "What people often forget about {topic}",
-    "Behind the scenes at {business}",
-    "A question we get asked about {topic}",
-    "Is {topic} right for you? Here's what to consider",
-    "Save this checklist before your next step",
-    "Let's make {topic} less confusing",
-    "What makes our approach to {topic} different?",
-]
-
-
 def clean(value: str, fallback: str) -> str:
     value = (value or "").strip()
     return value if value else fallback
 
 
-def build_calendar(business: str, business_type: str, offer: str, benefit: str) -> List[Dict[str, str]]:
-    rows = []
-    for index, (post_type, objective) in enumerate(POST_TYPES, start=1):
-        rows.append(
-            {
-                "Day": f"Day {index}",
-                "Post idea": post_type,
-                "Suggested angle": f"Connect {business_type} to {benefit}. Mention {offer} where relevant.",
-                "Purpose": objective,
-            }
-        )
-    return rows
-
-
-def build_captions(
-    business: str,
-    audience: str,
-    offer: str,
-    benefit: str,
-    topic: str,
-    cta: str,
-) -> List[str]:
-    result = []
-    for template in CAPTION_TEMPLATES:
-        result.append(
-            template.format(
-                business=business,
-                audience=audience,
-                offer=offer,
-                benefit=benefit,
-                topic=topic,
-                cta=cta,
-            )
-        )
-    return result
-
-
-def build_hooks(business: str, topic: str) -> List[str]:
-    return [hook.format(business=business, topic=topic) for hook in HOOKS]
-
-
-def pack_to_markdown(pack: Dict) -> str:
-    lines = [
-        f"# {pack['business']} — Social Media Starter Pack",
-        "",
-        f"**Business type:** {pack['business_type']}",
-        f"**Target audience:** {pack['audience']}",
-        f"**Platform:** {pack['platform']}",
-        f"**Offer:** {pack['offer']}",
-        f"**Main benefit:** {pack['benefit']}",
-        "",
-        "> This is a template-assisted draft. Check every detail, personalise the wording and only publish claims you can support.",
-        "",
-        "## 14-day content calendar",
-        "",
-    ]
-    for row in pack["calendar"]:
-        lines.extend(
-            [
-                f"### {row['Day']}: {row['Post idea']}",
-                f"- **Suggested angle:** {row['Suggested angle']}",
-                f"- **Purpose:** {row['Purpose']}",
-                "",
-            ]
-        )
-    lines.extend(["## Draft captions", ""])
-    for i, caption in enumerate(pack["captions"], start=1):
-        lines.extend([f"### Caption {i}", caption, ""])
-    lines.extend(["## Post hooks", ""])
-    for hook in pack["hooks"]:
-        lines.append(f"- {hook}")
-    lines.extend(
-        [
-            "",
-            "## Before publishing",
-            "- Check names, prices, dates, availability and other business details.",
-            "- Get permission before using customer names, photos, reviews or stories.",
-            "- Check that any offer terms are accurate and easy to understand.",
-            "- Edit the captions so they sound like the real business.",
-        ]
-    )
-    return "\n".join(lines)
-
-
-def csv_bytes(rows: List[Dict[str, str]]) -> bytes:
-    output = io.StringIO()
-    if rows:
-        writer = csv.DictWriter(output, fieldnames=list(rows[0].keys()))
-        writer.writeheader()
-        writer.writerows(rows)
-    return output.getvalue().encode("utf-8-sig")
-
-
 def build_pack_zip(pack: Dict) -> bytes:
+    """Bundle the polished PDF, editable CSV and Markdown source."""
     memory_file = io.BytesIO()
     with zipfile.ZipFile(memory_file, mode="w", compression=zipfile.ZIP_DEFLATED) as archive:
-        archive.writestr("ventureiq_starter_pack.md", pack_to_markdown(pack))
-        archive.writestr("14_day_content_calendar.csv", csv_bytes(pack["calendar"]))
+        archive.writestr("VentureIQ_30_Day_Social_Media_Starter_Pack.pdf", build_starter_pack_pdf(pack))
+        archive.writestr("30_day_content_calendar.csv", csv_bytes(pack["calendar"]))
+        archive.writestr("starter_pack_editable_notes.md", build_pack_markdown(pack))
         archive.writestr(
             "START_HERE.txt",
-            "Thank you for using this VentureIQ starter pack. "
-            "Please personalise every draft and verify all business details before publishing.\n",
+            "VentureIQ Social Media Starter Pack\n\n"
+            "This pack uses original built-in templates, not live trend data or AI-generated research.\n"
+            "Edit the drafts, verify all business details and get permission before using customer content.\n"
+            "The PDF is ready to review; the CSV is editable in a spreadsheet app.\n",
         )
     memory_file.seek(0)
     return memory_file.getvalue()
@@ -319,7 +192,7 @@ with st.sidebar:
     st.divider()
     st.markdown("**Free edition**")
     st.caption("Uses built-in templates. No OpenAI API key or paid AI connection is required.")
-    st.caption("Your work is stored in this browser session unless you download it.")
+    st.caption("Download generated packs to keep your work. Session data may reset.")
 
 
 # -----------------------------
@@ -380,7 +253,7 @@ if page == "Dashboard":
 # -----------------------------
 elif page == "Create a Starter Pack":
     st.title("Create a Social Media Starter Pack")
-    st.write("Build a downloadable pack for a small business or creator. No API key required.")
+    st.write("Create a polished 30-day content workbook with a PDF, editable calendar and caption bank. No API key required.")
 
     with st.form("starter_pack_form"):
         c1, c2 = st.columns(2)
@@ -413,9 +286,9 @@ elif page == "Create a Starter Pack":
             "benefit": benefit,
             "topic": topic,
             "cta": cta,
-            "calendar": build_calendar(business, business_type, offer, benefit),
-            "captions": build_captions(business, audience, offer, benefit, topic, cta),
-            "hooks": build_hooks(business, topic),
+            "calendar": build_calendar(business, business_type, audience, offer, benefit, topic, cta),
+            "captions": build_captions(business, business_type, audience, offer, benefit, topic, cta),
+            "hooks": build_hooks(business, business_type, audience, offer, topic),
         }
         st.session_state.latest_pack = pack
 
@@ -424,27 +297,47 @@ elif page == "Create a Starter Pack":
         st.divider()
         st.subheader(f"{pack['business']} — your starter pack")
         st.caption(f"{pack['platform']} · {pack['business_type']} · audience: {pack['audience']}")
-        left, right = st.columns(2)
-        with left:
-            st.markdown("### 14-day calendar")
-            st.dataframe(pack["calendar"], use_container_width=True, hide_index=True)
-        with right:
-            st.markdown("### Draft captions")
-            for i, caption in enumerate(pack["captions"], start=1):
-                with st.expander(f"Caption {i}"):
-                    st.write(caption)
-        with st.expander("Post hooks"):
+        st.success("Your 30-day starter pack is ready. Review and personalise every draft before sharing it with a customer.")
+        st.markdown("### 30-day content calendar")
+        st.dataframe(pack["calendar"], use_container_width=True, hide_index=True)
+
+        st.markdown("### Caption bank")
+        for i, caption in enumerate(pack["captions"], start=1):
+            with st.expander(f"{i}. {caption['Caption type']}"):
+                st.write(caption["Draft caption"])
+
+        with st.expander("15 post hooks"):
             for hook in pack["hooks"]:
-                st.write(f"• {hook}")
-        st.download_button(
-            "Download complete starter pack (.zip)",
-            data=build_pack_zip(pack),
-            file_name="ventureiq_social_media_starter_pack.zip",
-            mime="application/zip",
-            type="primary",
-            use_container_width=True,
-        )
-        st.caption("The ZIP includes a Markdown pack, a CSV content calendar and a start-here note.")
+                st.write(f"- {hook}")
+
+        st.markdown("### Download your product")
+        d1, d2, d3 = st.columns(3)
+        with d1:
+            st.download_button(
+                "Download polished PDF",
+                data=build_starter_pack_pdf(pack),
+                file_name="ventureiq_30_day_social_media_starter_pack.pdf",
+                mime="application/pdf",
+                type="primary",
+                use_container_width=True,
+            )
+        with d2:
+            st.download_button(
+                "Download editable calendar",
+                data=csv_bytes(pack["calendar"]),
+                file_name="ventureiq_30_day_content_calendar.csv",
+                mime="text/csv",
+                use_container_width=True,
+            )
+        with d3:
+            st.download_button(
+                "Download complete ZIP",
+                data=build_pack_zip(pack),
+                file_name="ventureiq_social_media_starter_pack.zip",
+                mime="application/zip",
+                use_container_width=True,
+            )
+        st.caption("The ZIP includes the designed PDF workbook, editable CSV calendar, Markdown notes and a read-me file.")
 
 
 # -----------------------------
@@ -510,17 +403,17 @@ elif page == "Products & Pricing":
         st.markdown("### Social Media Starter Pack")
         st.markdown("## $7")
         st.caption("Example test price · one-off download")
-        st.write("- 14-day content calendar")
-        st.write("- 8 draft captions")
-        st.write("- 10 post hooks")
-        st.write("- Publishing checklist")
+        st.write("- 30-day content calendar")
+        st.write("- 12 caption drafts")
+        st.write("- 15 post hooks")
+        st.write("- Publishing checklist and tracker")
     with p2:
         st.markdown("### Custom Content Pack")
         st.markdown("## $30")
         st.caption("Example test price · customised service")
-        st.write("- Two-week content plan")
-        st.write("- Draft caption concepts")
-        st.write("- Platform suggestions")
+        st.write("- Custom 30-day content plan")
+        st.write("- 12 tailored caption drafts")
+        st.write("- Content formats and creative briefs")
         st.write("- One agreed revision")
     with p3:
         st.markdown("### Future VentureIQ Plus")
@@ -531,9 +424,32 @@ elif page == "Products & Pricing":
         st.write("- More planning tools")
         st.write("- Optional AI features later")
 
+    st.markdown("### Download the reusable planner template")
+    st.write("This generic version is the downloadable workbook concept. Buyers fill in their own business details and adapt the prompts.")
+    blank_pack = build_blank_product_pack()
+    b1, b2 = st.columns(2)
+    with b1:
+        st.download_button(
+            "Download blank planner PDF",
+            data=build_starter_pack_pdf(blank_pack),
+            file_name="ventureiq_blank_30_day_social_media_planner.pdf",
+            mime="application/pdf",
+            type="primary",
+            use_container_width=True,
+        )
+    with b2:
+        st.download_button(
+            "Download blank planner ZIP",
+            data=build_pack_zip(blank_pack),
+            file_name="ventureiq_blank_social_media_planner.zip",
+            mime="application/zip",
+            use_container_width=True,
+        )
+
     st.warning(
         "Before taking orders, have a parent or guardian help check your payment method, platform age rules, "
-        "refund process, customer privacy and any tax or business obligations."
+        "refund process, customer privacy and any tax or business obligations. The hosted demo is for testing, "
+        "not for collecting real customer or payment records."
     )
 
 
@@ -542,7 +458,8 @@ elif page == "Products & Pricing":
 # -----------------------------
 elif page == "Sales Tracker":
     st.title("Sales Tracker")
-    st.write("Record test sales and download a copy of your records. Entries are kept in this app session.")
+    st.write("Prototype tracker for fictional test entries only. Do not enter real customer details, payment details or sensitive financial records here.")
+    st.warning("Use this page only with made-up test data while the app is hosted on Streamlit Community Cloud. Ask a parent or guardian to review suitable commercial hosting before using it for a real business.")
 
     with st.form("sales_form"):
         sale_date = st.date_input("Sale date", value=date.today())
@@ -584,5 +501,5 @@ elif page == "Sales Tracker":
 st.divider()
 st.caption(
     "VentureIQ Free Edition · Template-assisted planning tools · "
-    "Not financial, legal or tax advice. Review all content before sharing it with customers."
+    "No paid AI API required. Review all content before sharing it with customers."
 )
