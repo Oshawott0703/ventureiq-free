@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import io
-import os
 import zipfile
 from datetime import date
 from typing import Dict, List
@@ -197,28 +196,137 @@ with st.sidebar:
 
 
 # -----------------------------
-# Personal AI chatbot
+# Free built-in VentureIQ assistant
 # -----------------------------
-def get_openai_api_key() -> str:
-    """Read the API key from Streamlit secrets or an environment variable."""
-    secret_key = ""
-    try:
-        secret_key = st.secrets.get("OPENAI_API_KEY", "")
-    except Exception:
-        # Local development may not have a secrets.toml file.
-        pass
-    return secret_key or os.getenv("OPENAI_API_KEY", "")
+def ventureiq_reply(prompt: str) -> str:
+    """Create guided replies locally using rules and the user's latest starter pack."""
+    question = prompt.lower().strip()
+    pack = st.session_state.get("latest_pack")
+
+    if any(word in question for word in ("caption", "write a post", "instagram post", "facebook post")):
+        if pack and pack.get("captions"):
+            captions = pack["captions"][:3]
+            lines = [f"Here are three caption drafts from your latest **{pack['business']}** starter pack:"]
+            for i, item in enumerate(captions, start=1):
+                lines.append(f"\n**{i}. {item.get('Caption type', 'Caption')}**\n{item.get('Draft caption', '')}")
+            lines.append("\nEdit the wording so it sounds like the real business, and check every detail before publishing.")
+            return "\n".join(lines)
+        return (
+            "I can help you shape a caption. First, open **Create a Starter Pack** and generate a pack "
+            "with the business name, audience, offer and tone. Then ask me for caption ideas here. "
+            "For now, use this simple structure:\n\n"
+            "1. Start with a customer question or useful observation.\n"
+            "2. Explain one clear benefit of the product or service.\n"
+            "3. Finish with one action, such as asking a question or inviting people to learn more."
+        )
+
+    if any(word in question for word in ("calendar", "content plan", "post ideas", "content ideas", "what should i post")):
+        if pack and pack.get("calendar"):
+            rows = pack["calendar"][:5]
+            lines = [f"Here are the first five ideas from your **{pack['business']}** content calendar:"]
+            for row in rows:
+                day = row.get("Day", "")
+                topic = row.get("Content idea", row.get("Post idea", row.get("Topic", "")))
+                platform = row.get("Platform", pack.get("platform", "your platform"))
+                lines.append(f"- **Day {day}** ({platform}): {topic}")
+            lines.append("\nYour full 30-day calendar is in **Create a Starter Pack**.")
+            return "\n".join(lines)
+        return (
+            "A balanced weekly content plan could look like this:\n\n"
+            "- **Monday — Helpful tip:** answer one common customer question.\n"
+            "- **Tuesday — Product or service:** explain one feature and its practical benefit.\n"
+            "- **Wednesday — Behind the scenes:** show how the business prepares or works.\n"
+            "- **Thursday — Customer FAQ:** clarify a common misconception.\n"
+            "- **Friday — Community:** ask a question or share a local connection.\n"
+            "- **Weekend — Reminder:** explain how people can find out more.\n\n"
+            "Create a Starter Pack to generate a tailored 30-day calendar."
+        )
+
+    if any(word in question for word in ("business idea", "ideas for a business", "start a business", "what business")):
+        return (
+            "**A simple way to choose a business idea**\n\n"
+            "1. Start with a problem people regularly need help solving.\n"
+            "2. Identify a group of people who experience that problem.\n"
+            "3. Think of a small product or service that could help.\n"
+            "4. Ask a few trusted people for feedback before spending money.\n"
+            "5. Make a basic sample and improve it using the feedback.\n\n"
+            "**Ideas to explore:** a social media content service for local businesses, printable study planners, "
+            "custom digital invitations, or simple event-planning checklists. Check platform age rules and get "
+            "a parent or guardian involved before taking orders or payments."
+        )
+
+    if any(word in question for word in ("marketing", "promote", "more customers", "reach", "grow my", "followers")):
+        return (
+            "**A practical marketing starting plan**\n\n"
+            "- **Choose one audience:** describe who is most likely to need the offer.\n"
+            "- **Explain one benefit:** focus on what the customer can do or understand after using it.\n"
+            "- **Be consistent:** choose a realistic posting schedule you can maintain.\n"
+            "- **Use a mix of posts:** helpful tips, product explanations, FAQs and behind-the-scenes content.\n"
+            "- **Review feedback:** note which topics lead to genuine questions or enquiries.\n\n"
+            "Avoid promising results. Track what actually happens and adjust your next posts."
+        )
+
+    if any(word in question for word in ("price", "pricing", "charge", "cost", "how much")):
+        return (
+            "**A sensible way to think about pricing**\n\n"
+            "1. List the time and work required to create the product.\n"
+            "2. Include any genuine costs, such as software or materials.\n"
+            "3. Compare similar offers, without assuming their prices guarantee demand.\n"
+            "4. Explain exactly what the buyer receives and how many revisions are included.\n"
+            "5. Test the offer with feedback before treating a price as final.\n\n"
+            "VentureIQ's displayed prices are example test prices, not researched market rates. "
+            "Have a parent or guardian help review payment arrangements and any business obligations."
+        )
+
+    if any(word in question for word in ("product description", "describe my product", "description")):
+        if pack:
+            return (
+                f"**Draft product description — {pack['business']}**\n\n"
+                f"Explore {pack['offer']} from {pack['business']}, a {pack['business_type']} serving "
+                f"{pack['audience']}. The offer is designed around {pack['benefit']}. "
+                f"Find out more by contacting the business.\n\n"
+                "This is a starting draft. Confirm the details and replace the general wording with accurate "
+                "features, inclusions and terms before using it."
+            )
+        return (
+            "A clear product description should explain **what it is, who it is for, what is included, "
+            "and what the customer can do next**. Generate a Starter Pack first so I can use its business "
+            "details to create a draft description."
+        )
+
+    if any(word in question for word in ("strategy", "plan", "next step", "where do i start", "help me")):
+        return (
+            "**Your next-step checklist**\n\n"
+            "1. Choose one specific audience.\n"
+            "2. Write down the problem your product or service helps with.\n"
+            "3. Create one small sample using VentureIQ's Starter Pack tool.\n"
+            "4. Ask trusted people what is clear and what needs improving.\n"
+            "5. Update the sample before sharing it more widely.\n\n"
+            "Keep the first version small. You do not need to build every feature at once."
+        )
+
+    return (
+        "I can help with **business ideas, marketing plans, captions, content calendars, product descriptions "
+        "and pricing basics**.\n\n"
+        "Try asking something specific, such as:\n"
+        "- Give me five post ideas for a local cafe.\n"
+        "- Help me write an Instagram caption.\n"
+        "- How should I explain my digital product?\n"
+        "- Give me a simple marketing plan for a new business.\n\n"
+        "This free assistant uses built-in rules and templates. It does not connect to a live AI model or "
+        "search current market trends."
+    )
 
 
 def render_personal_ai_chatbot() -> None:
-    """Render VentureIQ's business-focused assistant above the dashboard."""
+    """Render the free, local VentureIQ assistant above the dashboard."""
     st.markdown(
         """
         <div class="hero">
-          <div class="eyebrow">Your personal AI assistant</div>
+          <div class="eyebrow">Free built-in business helper</div>
           <h2 style="margin:.35rem 0 0 0;">Ask VentureIQ</h2>
           <p class="muted" style="margin:.45rem 0 0 0;">
-            Brainstorm business ideas, improve content, plan campaigns and get practical next steps.
+            Get guided help with business ideas, marketing, captions and content planning — no API key needed.
           </p>
         </div>
         """,
@@ -226,96 +334,37 @@ def render_personal_ai_chatbot() -> None:
     )
 
     if "ai_messages" not in st.session_state:
-        st.session_state.ai_messages = [
-            {
-                "role": "assistant",
-                "content": "Hi! I'm your VentureIQ assistant. I can help you brainstorm business ideas, plan social content, improve captions and think through your next steps. What are you working on?",
-            }
-        ]
+        st.session_state.ai_messages = [{
+            "role": "assistant",
+            "content": (
+                "Welcome to VentureIQ! I can help with business ideas, marketing plans, captions, "
+                "content calendars and product descriptions. What would you like to work on?"
+            ),
+        }]
 
-    api_key = get_openai_api_key()
     with st.container(border=True):
         top_left, top_right = st.columns([5, 1])
         with top_left:
-            st.markdown("**VentureIQ Business Assistant**")
-            st.caption("A focused assistant for small-business planning and content creation.")
+            st.markdown("**VentureIQ Assistant · Free Edition**")
+            st.caption("Built-in guidance and templates. No OpenAI key, external AI account or API billing.")
         with top_right:
             if st.button("Clear chat", key="clear_ai_chat", use_container_width=True):
-                st.session_state.ai_messages = [
-                    {
-                        "role": "assistant",
-                        "content": "Chat cleared. What would you like to work on next?",
-                    }
-                ]
+                st.session_state.ai_messages = [{
+                    "role": "assistant",
+                    "content": "Chat cleared. What would you like help planning?",
+                }]
                 st.rerun()
 
         for message in st.session_state.ai_messages:
             with st.chat_message(message["role"]):
                 st.markdown(message["content"])
 
-        if not api_key:
-            st.info(
-                "The chatbot is ready, but live AI replies are not connected yet. "
-                "Add an OPENAI_API_KEY in your Streamlit app's Secrets settings to activate it."
-            )
-            st.code('OPENAI_API_KEY = "your-api-key"', language="toml")
-            st.caption(
-                "Keep the key private. Do not paste it into app.py or commit it to GitHub. "
-                "An adult should manage the API account, key and any billing. API usage may cost money."
-            )
-            st.chat_input("Connect the AI key to start chatting", disabled=True, key="ai_chat_disabled")
-            return
-
-        prompt = st.chat_input("Ask VentureIQ about your business or content...")
+        prompt = st.chat_input("Ask VentureIQ about your business or content...", key="ventureiq_chat_input")
         if prompt:
             st.session_state.ai_messages.append({"role": "user", "content": prompt})
-            with st.chat_message("user"):
-                st.markdown(prompt)
-
-            system_instructions = (
-                "You are VentureIQ, a practical and supportive business-planning assistant inside a "
-                "beginner-friendly business content app. Help with brainstorming, audience definition, "
-                "content calendars, social captions, marketing plans, product ideas and clear next steps. "
-                "Use plain language and structured, actionable suggestions. Ask a brief clarifying question "
-                "when essential details are missing. Do not claim to have checked live trends, analytics, "
-                "prices or laws unless that information is supplied or a verified tool is available. "
-                "Do not guarantee sales, reach, followers or business outcomes. Encourage the user to verify "
-                "facts and get permission before using customer stories, photos or testimonials. Never ask "
-                "for passwords, payment details, private customer data or other sensitive information. "
-                "For legal, tax, financial or contractual decisions, provide general educational context and "
-                "recommend review by a qualified adult or professional."
-            )
-            # Send only the most recent messages to keep requests concise.
-            conversation = [
-                {"role": item["role"], "content": item["content"]}
-                for item in st.session_state.ai_messages[-13:]
-            ]
-            try:
-                from openai import OpenAI
-
-                client = OpenAI(api_key=api_key)
-                with st.chat_message("assistant"):
-                    with st.spinner("VentureIQ is thinking..."):
-                        response = client.responses.create(
-                            model="gpt-6-luna",
-                            instructions=system_instructions,
-                            input=conversation,
-                            max_output_tokens=500,
-                        )
-                    answer = response.output_text.strip() or "I couldn't create a response. Please try again."
-                    st.markdown(answer)
-                st.session_state.ai_messages.append({"role": "assistant", "content": answer})
-            except Exception as exc:
-                # Keep the technical details out of the page so secrets are never exposed.
-                error_message = (
-                    "I couldn't reach the AI service. Check that the API key is valid and that the "
-                    "API project has access and available usage, then try again."
-                )
-                with st.chat_message("assistant"):
-                    st.error(error_message)
-                st.session_state.ai_messages.append(
-                    {"role": "assistant", "content": error_message}
-                )
+            answer = ventureiq_reply(prompt)
+            st.session_state.ai_messages.append({"role": "assistant", "content": answer})
+            st.rerun()
 
 
 # -----------------------------
