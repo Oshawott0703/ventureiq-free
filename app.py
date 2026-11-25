@@ -871,8 +871,6 @@ elif page == "Products & Pricing":
 elif page == "Sales Tracker":
     st.title("Sales Tracker")
     st.write("Prototype tracker for fictional test entries only. Do not enter real customer details, payment details or sensitive financial records here.")
-    st.warning("Use this page only with made-up test data while the app is hosted on Streamlit Community Cloud. Ask a parent or guardian to review suitable commercial hosting before using it for a real business.")
-
     with st.form("sales_form"):
         sale_date = st.date_input("Sale date", value=date.today())
         product = st.selectbox("Product or service", ["Social Media Starter Pack", "Custom Content Pack", "Other"])
