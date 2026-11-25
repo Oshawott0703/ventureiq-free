@@ -847,12 +847,6 @@ elif page == "Products & Pricing":
             use_container_width=True,
         )
 
-    st.warning(
-        "Before taking orders, have a parent or guardian help check your payment method, platform age rules, "
-        "refund process, customer privacy and any tax or business obligations. The hosted demo is for testing, "
-        "not for collecting real customer or payment records."
-    )
-
 
 # -----------------------------
 # Sales tracker
