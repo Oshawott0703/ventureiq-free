@@ -1,17 +1,23 @@
-VENTUREIQ CHATBOT UPDATE KIT
+VENTUREIQ GREETINGS UPDATE
 
-This is an update kit, not a complete replacement project ZIP. It includes:
-- apply_chatbot_update.py: safely patches your existing app.py to add greeting recognition before web search and removes the obsolete unreachable duplicate search code.
-- product_builder.py: the VentureIQ product-generation module recovered from your previously saved project file.
-- requirements.txt: the dependencies you supplied.
+This is a small update kit for your existing VentureIQ project, not a complete replacement project.
 
-HOW TO USE
-1. Make a backup copy of your current app.py.
-2. Put apply_chatbot_update.py in the same folder as app.py.
-3. Run: python apply_chatbot_update.py
-4. The script updates app.py in place. Check the changes, then commit app.py to GitHub.
-5. Keep product_builder.py and requirements.txt in the same project folder/repository as app.py.
+WHAT IT DOES
+- Adds your 12 exact greeting and polite-message responses.
+- Checks greetings before web search, so messages such as "Hi" do not trigger a search.
+- Removes the obsolete unreachable duplicate web-search code in your current app.py.
+- Keeps the rest of your existing app.py unchanged.
 
-The updater does not require an OpenAI API key or paid AI service. Greetings are matched locally and do not trigger web search.
+HOW TO APPLY IT (WINDOWS)
+1. Download and extract this ZIP.
+2. Copy apply_ventureiq_greetings.py into the same folder as your existing app.py.
+3. Open that folder in File Explorer.
+4. Click the address bar, type cmd, and press Enter.
+5. In the Command Prompt window, run:
+       python apply_ventureiq_greetings.py
+6. The script creates app.py.before_greetings_backup, updates app.py, and checks Python syntax.
+7. Open the app locally or commit the updated app.py to your GitHub repository so Streamlit Cloud deploys it.
 
-Recognised messages include: hi, hello, hey, good morning, good afternoon, good evening, how are you, thanks, thank you, bye and goodbye.
+Keep product_builder.py and requirements.txt in your project folder. The copies in this ZIP are included for reference and are not intended to overwrite newer versions unless you need them.
+
+If the script reports an error, do not delete your original app.py. The script is designed to stop rather than guess when it cannot safely identify the expected code.
