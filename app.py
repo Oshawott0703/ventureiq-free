@@ -104,6 +104,117 @@ if "latest_client_pack" not in st.session_state:
 if "sales" not in st.session_state:
     st.session_state.sales = []
 
+# -----------------------------
+# VentureIQ authentication
+# -----------------------------
+if supabase is None:
+    st.error("Supabase is not connected. Please check your configuration.")
+    st.stop()
+
+# Restore the user's session after Streamlit reruns
+saved_session = st.session_state.get("ventureiq_auth")
+
+if saved_session:
+    try:
+        restored = supabase.auth.set_session(
+            saved_session["access_token"],
+            saved_session["refresh_token"],
+        )
+        if restored.session:
+            st.session_state.ventureiq_auth = {
+                "access_token": restored.session.access_token,
+                "refresh_token": restored.session.refresh_token,
+            }
+    except Exception:
+        st.session_state.pop("ventureiq_auth", None)
+
+# Show login screen when nobody is signed in
+if not st.session_state.get("ventureiq_auth"):
+    st.title("🚀 Welcome to VentureIQ")
+    st.write("Sign in or create an account to access your workspace.")
+
+    login_tab, signup_tab = st.tabs(["Sign in", "Create account"])
+
+    with login_tab:
+        with st.form("ventureiq_login"):
+            login_email = st.text_input("Email address")
+            login_password = st.text_input("Password", type="password")
+            login_submitted = st.form_submit_button(
+                "Sign in",
+                use_container_width=True,
+            )
+
+        if login_submitted:
+            try:
+                response = supabase.auth.sign_in_with_password({
+                    "email": login_email.strip(),
+                    "password": login_password,
+                })
+
+                if response.session:
+                    st.session_state.ventureiq_auth = {
+                        "access_token": response.session.access_token,
+                        "refresh_token": response.session.refresh_token,
+                    }
+                    st.rerun()
+                else:
+                    st.error("Sign-in did not return a session.")
+
+            except Exception:
+                st.error("Sign-in failed. Check your email and password.")
+
+    with signup_tab:
+        with st.form("ventureiq_signup"):
+            signup_email = st.text_input("Email address", key="signup_email")
+            signup_password = st.text_input(
+                "Create password",
+                type="password",
+                key="signup_password",
+            )
+            confirm_password = st.text_input(
+                "Confirm password",
+                type="password",
+            )
+            signup_submitted = st.form_submit_button(
+                "Create account",
+                use_container_width=True,
+            )
+
+        if signup_submitted:
+            if not signup_email.strip() or not signup_password:
+                st.error("Please enter an email address and password.")
+            elif len(signup_password) < 8:
+                st.error("Your password must be at least 8 characters.")
+            elif signup_password != confirm_password:
+                st.error("Your passwords do not match.")
+            else:
+                try:
+                    response = supabase.auth.sign_up({
+                        "email": signup_email.strip(),
+                        "password": signup_password,
+                    })
+
+                    if response.session:
+                        st.session_state.ventureiq_auth = {
+                            "access_token": response.session.access_token,
+                            "refresh_token": response.session.refresh_token,
+                        }
+                        st.success("Account created!")
+                        st.rerun()
+                    else:
+                        st.success(
+                            "Account created! Check your email to confirm "
+                            "your address before signing in."
+                        )
+
+                except Exception:
+                    st.error(
+                        "Account creation failed. Check your details "
+                        "or try another email address."
+                    )
+
+    st.stop()
+
 
 # -----------------------------
 # Pack helpers
