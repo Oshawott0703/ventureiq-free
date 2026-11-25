@@ -320,6 +320,39 @@ def ventureiq_reply(prompt: str) -> str:
 
 @st.cache_data(ttl=900, show_spinner=False)
 def ventureiq_web_search(query: str) -> list:
+    """Search public web providers without requiring a paid API key."""
+    from ddgs import DDGS
+
+    try:
+        raw_results = DDGS(timeout=6).text(
+            query,
+            region="au-en",
+            safesearch="moderate",
+            max_results=5,
+            backend="auto",
+        )
+
+        clean_results = []
+
+        for item in raw_results or []:
+            title = str(item.get("title", "Untitled result")).strip()
+            snippet = str(item.get("body", "No preview available.")).strip()
+            url = str(item.get("href", "")).strip()
+
+            if url.startswith(("https://", "http://")):
+                clean_results.append({
+                    "title": title[:240],
+                    "snippet": snippet[:900],
+                    "url": url,
+                })
+
+        return clean_results[:5]
+
+    except Exception as exc:
+        logging.exception("VentureIQ web search failed")
+        raise RuntimeError(
+            f"Public web search failed ({type(exc).__name__})."
+        ) from exc
     """Search several public search backends, without a paid API key."""
     from ddgs import DDGS
 
