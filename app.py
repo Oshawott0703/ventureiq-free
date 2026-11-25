@@ -207,11 +207,8 @@ if not st.session_state.get("ventureiq_auth"):
                             "your address before signing in."
                         )
 
-                except Exception:
-                    st.error(
-                        "Account creation failed. Check your details "
-                        "or try another email address."
-                    )
+               except Exception as e:
+    st.error(f"Account creation failed: {e}")
 
     st.stop()
 
