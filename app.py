@@ -13,6 +13,19 @@ from product_builder import (
 )
 
 import streamlit as st
+from supabase import create_client
+
+SUPABASE_URL = st.secrets.get("SUPABASE_URL", "")
+SUPABASE_KEY = st.secrets.get("SUPABASE_KEY", "")
+
+if SUPABASE_URL and SUPABASE_KEY:
+    try:
+        supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+        st.sidebar.success("Supabase connected!")
+    except Exception as e:
+        st.sidebar.error(f"Supabase connection failed: {e}")
+else:
+    st.sidebar.warning("Supabase credentials missing.")
 
 logging.basicConfig(level=logging.INFO)
 
