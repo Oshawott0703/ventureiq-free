@@ -107,14 +107,9 @@ if "sales" not in st.session_state:
 # -----------------------------
 # VentureIQ authentication
 # -----------------------------
-if supabase is None:
-    st.error("Supabase is not connected. Please check your configuration.")
-    st.stop()
-
-# Restore the user's session after Streamlit reruns
+# Restore an existing Supabase session after Streamlit reruns.
 saved_session = st.session_state.get("ventureiq_auth")
-
-if saved_session:
+if saved_session and supabase is not None:
     try:
         restored = supabase.auth.set_session(
             saved_session["access_token"],
@@ -128,59 +123,91 @@ if saved_session:
     except Exception:
         st.session_state.pop("ventureiq_auth", None)
 
-# Show login screen when nobody is signed in
-if not st.session_state.get("ventureiq_auth"):
-    st.title("🚀 Welcome to VentureIQ")
-    st.write("Sign in or create an account to access your workspace.")
+# Handle the PKCE callback after a Google, GitHub or Discord sign-in.
+if supabase is not None:
+    auth_code = st.query_params.get("code")
+    if auth_code:
+        try:
+            response = supabase.auth.exchange_code_for_session(auth_code)
+            if response.session:
+                st.session_state.ventureiq_auth = {
+                    "access_token": response.session.access_token,
+                    "refresh_token": response.session.refresh_token,
+                }
+                st.query_params.clear()
+                st.rerun()
+        except Exception:
+            st.error("Sign-in could not be completed. Please try again.")
 
-    login_tab, signup_tab = st.tabs(["Sign in", "Create account"])
+if "show_login_dialog" not in st.session_state:
+    st.session_state.show_login_dialog = False
 
-    with login_tab:
+def require_login() -> bool:
+    """Open the login prompt when a signed-out visitor tries a protected action."""
+    if st.session_state.get("ventureiq_auth"):
+        return True
+    st.session_state.show_login_dialog = True
+    st.rerun()
+    return False
+
+@st.dialog("Sign in to VentureIQ")
+def login_dialog():
+    st.write("Sign in to create and manage your VentureIQ work.")
+    if supabase is None:
+        st.error("Sign-in is temporarily unavailable. Please check the Supabase connection.")
+        return
+
+    st.markdown("**Continue with**")
+    oauth_columns = st.columns(3)
+    for column, provider, label in zip(
+        oauth_columns,
+        ["google", "github", "discord"],
+        ["Google", "GitHub", "Discord"],
+    ):
+        with column:
+            if st.button(label, key=f"oauth_{provider}", use_container_width=True):
+                try:
+                    result = supabase.auth.sign_in_with_oauth({
+                        "provider": provider,
+                        "options": {"redirect_to": "https://ventureiq-free-epcyw9t6vgynvkwyejerhi.streamlit.app/"},
+                    })
+                    st.link_button("Continue to " + label, result.url, use_container_width=True)
+                except Exception:
+                    st.error(f"{label} sign-in could not be started. Check its Supabase provider settings.")
+
+    st.divider()
+    st.markdown("**✉️ Continue with email**")
+    email_login_tab, email_signup_tab = st.tabs(["Sign in", "Create account"])
+
+    with email_login_tab:
         with st.form("ventureiq_login"):
-            login_email = st.text_input("Email address")
-            login_password = st.text_input("Password", type="password")
-            login_submitted = st.form_submit_button(
-                "Sign in",
-                use_container_width=True,
-            )
-
+            login_email = st.text_input("Email address", key="login_email")
+            login_password = st.text_input("Password", type="password", key="login_password")
+            login_submitted = st.form_submit_button("Sign in", use_container_width=True)
         if login_submitted:
             try:
                 response = supabase.auth.sign_in_with_password({
                     "email": login_email.strip(),
                     "password": login_password,
                 })
-
                 if response.session:
                     st.session_state.ventureiq_auth = {
                         "access_token": response.session.access_token,
                         "refresh_token": response.session.refresh_token,
                     }
+                    st.session_state.show_login_dialog = False
                     st.rerun()
                 else:
                     st.error("Sign-in did not return a session.")
-
             except Exception:
                 st.error("Sign-in failed. Check your email and password.")
 
-  
-    with signup_tab:
+    with email_signup_tab:
         with st.form("ventureiq_signup"):
             signup_email = st.text_input("Email address", key="signup_email")
-            signup_password = st.text_input(
-                "Create password",
-                type="password",
-                key="signup_password",
-            )
-            confirm_password = st.text_input(
-                "Confirm password",
-                type="password",
-            )
-            signup_submitted = st.form_submit_button(
-                "Create account",
-                use_container_width=True,
-            )
-
+            signup_password = st.text_input("Create password", type="password", key="signup_password")
+            confirm_password = st.text_input("Confirm password", type="password", key="confirm_password")
+            signup_submitted = st.form_submit_button("Create account", use_container_width=True)
         if signup_submitted:
             if not signup_email.strip() or not signup_password:
                 st.error("Please enter an email address and password.")
@@ -194,26 +221,21 @@ if not st.session_state.get("ventureiq_auth"):
                         "email": signup_email.strip(),
                         "password": signup_password,
                     })
-
                     if response.session:
                         st.session_state.ventureiq_auth = {
                             "access_token": response.session.access_token,
                             "refresh_token": response.session.refresh_token,
                         }
+                        st.session_state.show_login_dialog = False
                         st.success("Account created!")
                         st.rerun()
                     else:
-                        st.success(
-                            "Account created! Check your email to confirm "
-                            "your address before signing in."
-                        )
+                        st.success("Account created! Check your email to confirm your address before signing in.")
+                except Exception as exc:
+                    st.error(f"Account creation failed: {exc}")
 
-                except Exception as e:
-                    st.error(f"Account creation failed: {e}")
-
-    st.stop()
-
-
+if st.session_state.show_login_dialog:
+    login_dialog()
 
 # -----------------------------
 # Pack helpers
@@ -308,6 +330,19 @@ def build_service_proposal(
 with st.sidebar:
     st.markdown("## 🚀 VentureIQ")
     st.caption("Think smarter. Build bigger.")
+    if st.session_state.get("ventureiq_auth"):
+        st.success("Signed in")
+        if st.button("Sign out", use_container_width=True):
+            try:
+                supabase.auth.sign_out()
+            except Exception:
+                st.warning("Your session could not be cleared from Supabase. Please refresh.")
+            st.session_state.pop("ventureiq_auth", None)
+            st.rerun()
+    else:
+        if st.button("✉️ Email / Sign in", use_container_width=True):
+            st.session_state.show_login_dialog = True
+            st.rerun()
     page = st.radio(
         "Workspace",
         [
@@ -798,6 +833,8 @@ elif page == "Create a Starter Pack":
         submitted = st.form_submit_button("Generate starter pack", type="primary", use_container_width=True)
 
     if submitted:
+        if not require_login():
+            st.stop()
         business = clean(business, "Your Business")
         business_type = clean(business_type, "small business")
         audience = clean(audience, "your local community")
@@ -896,6 +933,8 @@ elif page == "Custom Client Pack":
         client_submit = st.form_submit_button("Create client draft", type="primary", use_container_width=True)
 
     if client_submit:
+        if not require_login():
+            st.stop()
         st.session_state.latest_client_pack = build_service_proposal(
             clean(client_business, "Client Business"),
             clean(client_type, "small business"),
@@ -989,6 +1028,8 @@ elif page == "Sales Tracker":
         add_sale = st.form_submit_button("Add sale", type="primary", use_container_width=True)
 
     if add_sale:
+        if not require_login():
+            st.stop()
         st.session_state.sales.append(
             {
                 "Date": sale_date.isoformat(),
