@@ -1,6 +1,6 @@
 # VentureIQ Free Edition - Product Studio upgrade
 
-A no-paid-API Streamlit app for preparing social media content packs and simple business planning resources.
+*VentureIQ Free Edition* is a free app for small businesses that are working to expand. The app utilizes AI agents to prepare social media content packs and simple business planning resources. The app is based on Streamlit, an open source data app framework, helping to turn pure data into visually appealing applications.
 
 ## New Product Studio features
 
@@ -15,17 +15,17 @@ A no-paid-API Streamlit app for preparing social media content packs and simple 
 
 ## Important product notes
 
-- The generators use original built-in templates, not a paid AI model, live trend data or automated market research.
+- The generators use original built-in templates; not a paid AI model, live trend data or automated market research.
 - A filled sample pack is an example for a fictional cafe; replace the details for each real client.
 - All generated drafts must be reviewed and personalised before they are sold or published.
 - Get permission before using customer names, photos, reviews or stories.
 - Do not enter private customer details, payment details or sensitive financial information into the hosted demo.
-- Before taking real orders or collecting customer information, have a parent/guardian review suitable commercial hosting, platform age rules, privacy, refund arrangements and business/tax obligations.
+- Before taking real orders or collecting customer information, review suitable commercial hosting, platform age rules, privacy, refund arrangements and business/tax obligations.
 
 ## Requirements
 
 - Python 3.10 or later
-- Internet connection for first-time package installation
+- Internet connection (Only for first-time package installation)
 
 ## Install on Windows
 
@@ -50,7 +50,7 @@ python -m streamlit run app.py
 
 The updated files need to be committed to the existing GitHub repository. Streamlit Community Cloud will then rebuild the app from the new commit. Use the same repository and main file path (`app.py`).
 
-## Stop and restart
+## Stopping and restarting
 
 - Stop: press `Ctrl + C` in the Command Prompt.
 - Restart: run `python -m streamlit run app.py` from this folder.
