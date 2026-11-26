@@ -163,6 +163,7 @@ if not st.session_state.get("ventureiq_auth"):
             except Exception:
                 st.error("Sign-in failed. Check your email and password.")
 
+  
     with signup_tab:
         with st.form("ventureiq_signup"):
             signup_email = st.text_input("Email address", key="signup_email")
@@ -207,10 +208,11 @@ if not st.session_state.get("ventureiq_auth"):
                             "your address before signing in."
                         )
 
-               except Exception as e:
-    st.error(f"Account creation failed: {e}")
+                except Exception as e:
+                    st.error(f"Account creation failed: {e}")
 
     st.stop()
+
 
 
 # -----------------------------
