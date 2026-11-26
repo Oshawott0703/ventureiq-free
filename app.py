@@ -726,6 +726,8 @@ def render_personal_ai_chatbot() -> None:
 
         prompt = st.chat_input("Ask VentureIQ a question...", key="ventureiq_chat_input")
         if prompt:
+            if not require_login():
+                st.stop()
             st.session_state.ai_messages.append({"role": "user", "content": prompt})
             if web_search_on:
                 try:
