@@ -277,13 +277,6 @@ def login_dialog():
 
 if st.session_state.show_login_required_prompt:
     login_required_dialog()
-ed!")
-                        st.rerun()
-                    else:
-                        st.success("Account created! Check your email to confirm your address before signing in.")
-                except Exception as exc:
-                    st.error(f"Account creation failed: {exc}")
-
 if st.session_state.show_login_dialog:
     login_dialog()
 
