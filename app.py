@@ -26,13 +26,20 @@ st.set_page_config(
 SUPABASE_URL = st.secrets.get("SUPABASE_URL", "")
 SUPABASE_KEY = st.secrets.get("SUPABASE_KEY", "")
 
-supabase = None
+# Keep one Supabase client inside each Streamlit visitor's session.
+# This prevents authentication state from being shared between visitors.
+supabase = st.session_state.get("_ventureiq_supabase")
 
 if SUPABASE_URL and SUPABASE_KEY:
-    try:
-        supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+    if supabase is None:
+        try:
+            supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+            st.session_state["_ventureiq_supabase"] = supabase
+        except Exception:
+            supabase = None
+    if supabase is not None:
         st.sidebar.success("Supabase connected!")
-    except Exception:
+    else:
         st.sidebar.error("Supabase connection failed. Check your configuration.")
 else:
     st.sidebar.warning("Supabase credentials missing.")
@@ -90,24 +97,10 @@ st.markdown(
     .small-note { color: #a9b5d7; font-size: .85rem; }
     </style>
     """,
-    unsafe_allow_html=True,
-)
-
-
-# -----------------------------
-# Session state
-# -----------------------------
-if "latest_pack" not in st.session_state:
-    st.session_state.latest_pack = None
-if "latest_client_pack" not in st.session_state:
-    st.session_state.latest_client_pack = None
-if "sales" not in st.session_state:
-    st.session_state.sales = []
-
-# -----------------------------
+    unsafe_a# -----------------------------
 # VentureIQ authentication
 # -----------------------------
-# Restore an existing Supabase session after Streamlit reruns.
+# Restore the visitor's saved Supabase session after Streamlit reruns.
 saved_session = st.session_state.get("ventureiq_auth")
 if saved_session and supabase is not None:
     try:
@@ -120,10 +113,12 @@ if saved_session and supabase is not None:
                 "access_token": restored.session.access_token,
                 "refresh_token": restored.session.refresh_token,
             }
+        else:
+            st.session_state.pop("ventureiq_auth", None)
     except Exception:
         st.session_state.pop("ventureiq_auth", None)
 
-# Handle the PKCE callback after a Google, GitHub or Discord sign-in.
+# Handle OAuth's PKCE callback once, then remove the code from the URL.
 if supabase is not None:
     auth_code = st.query_params.get("code")
     if auth_code:
@@ -134,21 +129,55 @@ if supabase is not None:
                     "access_token": response.session.access_token,
                     "refresh_token": response.session.refresh_token,
                 }
-                st.query_params.clear()
-                st.rerun()
+                st.session_state.pop("ventureiq_auth_error", None)
+            else:
+                st.session_state["ventureiq_auth_error"] = (
+                    "Sign-in did not return a session. Please try again."
+                )
+            st.query_params.clear()
+            st.rerun()
         except Exception:
-            st.error("Sign-in could not be completed. Please try again.")
+            st.session_state.pop("ventureiq_auth", None)
+            st.session_state["ventureiq_auth_error"] = (
+                "Sign-in could not be completed. Please try again. "
+                "If you used Discord, check that its redirect URI exactly matches "
+                "the Supabase Discord callback URL."
+            )
+            st.query_params.clear()
+
+if st.session_state.pop("ventureiq_auth_error", None):
+    st.error(
+        "Sign-in could not be completed. Please try again. "
+        "If you used Discord, check that its redirect URI exactly matches "
+        "the Supabase Discord callback URL."
+    )
 
 if "show_login_dialog" not in st.session_state:
     st.session_state.show_login_dialog = False
+if "show_login_required_prompt" not in st.session_state:
+    st.session_state.show_login_required_prompt = False
 
 def require_login() -> bool:
-    """Open the login prompt when a signed-out visitor tries a protected action."""
+    """Show a clear login/cancel prompt for a protected action."""
     if st.session_state.get("ventureiq_auth"):
         return True
-    st.session_state.show_login_dialog = True
+    st.session_state.show_login_required_prompt = True
     st.rerun()
     return False
+
+@st.dialog("Login required")
+def login_required_dialog():
+    st.write("You need to be logged in to do this action.")
+    login_col, cancel_col = st.columns(2)
+    with login_col:
+        if st.button("Login", type="primary", use_container_width=True):
+            st.session_state.show_login_required_prompt = False
+            st.session_state.show_login_dialog = True
+            st.rerun()
+    with cancel_col:
+        if st.button("Cancel", use_container_width=True):
+            st.session_state.show_login_required_prompt = False
+            st.rerun()
 
 @st.dialog("Sign in to VentureIQ")
 def login_dialog():
@@ -169,11 +198,20 @@ def login_dialog():
                 try:
                     result = supabase.auth.sign_in_with_oauth({
                         "provider": provider,
-                        "options": {"redirect_to": "https://ventureiq-free-epcyw9t6vgynvkwyejerhi.streamlit.app/"},
+                        "options": {
+                            "redirect_to": "https://ventureiq-free-epcyw9t6vgynvkwyejerhi.streamlit.app/"
+                        },
                     })
-                    st.link_button("Continue to " + label, result.url, use_container_width=True)
+                    st.link_button(
+                        "Continue to " + label,
+                        result.url,
+                        use_container_width=True,
+                    )
                 except Exception:
-                    st.error(f"{label} sign-in could not be started. Check its Supabase provider settings.")
+                    st.error(
+                        f"{label} sign-in could not be started. "
+                        "Check that the provider is enabled and its callback URL is correct."
+                    )
 
     st.divider()
     st.markdown("**✉️ Continue with email**")
@@ -228,6 +266,18 @@ def login_dialog():
                         }
                         st.session_state.show_login_dialog = False
                         st.success("Account created!")
+                        st.rerun()
+                    else:
+                        st.success(
+                            "Account created! Check your email to confirm your address "
+                            "before signing in."
+                        )
+                except Exception:
+                    st.error("Account creation failed. Check your details and try again.")
+
+if st.session_state.show_login_required_prompt:
+    login_required_dialog()
+ed!")
                         st.rerun()
                     else:
                         st.success("Account created! Check your email to confirm your address before signing in.")
@@ -332,12 +382,19 @@ with st.sidebar:
     st.caption("Think smarter. Build bigger.")
     if st.session_state.get("ventureiq_auth"):
         st.success("Signed in")
+        st.caption("Signing out clears unsaved workspace data from this browser session.")
         if st.button("Sign out", use_container_width=True):
             try:
-                supabase.auth.sign_out()
+                if supabase is not None:
+                    supabase.auth.sign_out()
             except Exception:
-                st.warning("Your session could not be cleared from Supabase. Please refresh.")
+                pass
             st.session_state.pop("ventureiq_auth", None)
+            st.session_state.pop("_ventureiq_supabase", None)
+            for key in ("latest_pack", "latest_client_pack", "sales", "ai_messages"):
+                st.session_state.pop(key, None)
+            st.session_state.show_login_dialog = False
+            st.session_state.show_login_required_prompt = False
             st.rerun()
     else:
         if st.button("✉️ Email / Sign in", use_container_width=True):
